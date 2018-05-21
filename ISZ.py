@@ -1,0 +1,231 @@
+import model as model
+import numpy as np
+import math
+import random
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import Satellite
+from numpy.linalg import norm
+
+
+# noinspection PyCompatibility
+class WhiteNoise:
+    tk = 0
+    randvalue = 0
+    intnumber = 0
+    sigma = 0
+
+    def __init__(self, n):
+        WhiteNoise.tk = n
+        WhiteNoise.RandValue = 0
+        WhiteNoise.intNumber = -1
+        WhiteNoise.sigma = math.sqrt(1 / WhiteNoise.tk)
+
+    @staticmethod
+    def getvalue(t):
+        if math.floor(t / WhiteNoise.tk) != WhiteNoise.intnumber:
+            WhiteNoise.randvalue = random.normalvariate(0, WhiteNoise.sigma)
+            WhiteNoise.intnumber = math.floor(t / WhiteNoise.tk)
+        return WhiteNoise.randvalue
+
+
+# noinspection PyCompatibility
+class ISZ(model.Model):
+    mu = 398600.436  # km/s^2
+    re = 6371  # Earth radius, km
+    omega = 7.292115e-5  # angular velocity of earth rotation рад/c
+
+    # initializing starting conditions in constructor
+    # we have a system of 6 equations for Vx, Vy, Vz and Vx/dx, Vy/dy, Vz/dz
+    def __init__(self, t0, t, h, n, x0, startingConditions: Satellite.Satellite):  # n = 7
+        super().__init__(t0, t, h, n)
+        self.wn = WhiteNoise(0.001)
+
+        self.m = 50  # mass of satellite kg
+
+        self.matrix = np.array([[0, 1.225, -0.2639 * 10e-8, 0.7825e-4],
+                                [20000, 0.891e-1, 0.4407e-9, 0.16375e-3],
+                                [60000, 2.578e-4, -0.2560e-8, 0.5905e-4],
+                                [100000, 4.061e-7, 0.1469e-8, 0.1787e-3],
+                                [150000, 2.130e-9, 0.8004e-10, 0.3734e-4],
+                                [300000, 4.764e-11, 0.7111e-11, 0.1547e-4],
+                                [600000, 8.726e-13, 0.1831e-11, 0.9280e-5],
+                                [900000, 6.367e-14, 0, 0.9540e-5]])
+
+        self.omega = np.array([0, 0, 7.292115e-5])
+        self.v_alpha = np.zeros(3)
+        # x0 = startingConditions.x0
+        self.x0 = np.zeros(n)
+        for i in range(6):
+            self.x0[i] = x0[i]
+        #self.x0[6] = 0
+        self.count = 0  # счетчик того, сколько раз НИП засечет спутник
+        self.tNip = 0  # время когда спутник попадает в зону видимости НИПа
+        self.OpornResult = np.zeros((1, self.n+1))  # матрица результатов для опорной траектории
+        self.ElevationAzimut = np.zeros((2, 1))  # матрица, которая содержит в себе элевацию и азимут
+        self.Elevation = np.zeros((0, 1))
+        self.Azimut = np.zeros((0, 1))
+        self.e = startingConditions.e
+        self.time = np.zeros(1)  # массив в котором хранятся углы, которые измеряются пока ИСЗ в зоне видимости НИПа
+        self.d = np.zeros((0, 3))
+        self.h = 0
+
+        # self.resultPlus = np.zeros((1, self.n+1))  # массив результата с разбросом +
+        # self.resultMinus = np.zeros((1, self.n+1))  # массив результата с разбросом -
+        # self.deltaXYZ = 100  # разброс для координат
+        # self.deltaV = 10  # разброс для скоростей
+
+    @staticmethod
+    def getsize(a):
+        size = 0
+        for k in range(len(a)):
+            size += 1
+        return size
+
+    @staticmethod
+    def return_temp(i):
+        if i < 900000:
+            temp = 0
+        elif i < 60000:
+            temp = 1
+        elif i < 100000:
+            temp = 2
+        elif i < 150000:
+            temp = 3
+        elif i < 300000:
+            temp = 4
+        elif i < 600000:
+            temp = 5
+        elif i < 900000:
+            temp = 6
+        elif i >= 20000:
+            temp = 7
+        else:
+            temp = 'Error'
+        return temp
+
+    @staticmethod
+    def Geographical(a):
+        result = np.zeros(3)
+        result[0] = math.atan(a[1]/a[0])
+        result[1] = math.atan(a[2]/(math.sqrt(pow(a[0], 2) + pow(a[1], 2))))
+        result[2] = math.sqrt(pow(a[0], 2) + pow(a[1], 2) + pow(a[2], 2))
+        return result
+
+    def std_density(self, height):  # ro(h)
+        height *= 1000
+        i = self.return_temp(height)
+        result = self.matrix[i][1] * math.pow(math.e, (self.matrix[i][2] * math.pow((height - self.matrix[i][0]), 2) -
+                                                       self.matrix[i][3] * (height - self.matrix[i][0])))
+        result /= 1000
+        return result
+
+    def aerodynamic_force(self, a):  # R
+        module_x = math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2])  # length of a vector
+        height = module_x - ISZ.re
+
+        a1 = np.array([a[0], a[1], a[2]])
+        c = np.zeros(3)
+        for i in range(3):
+            c[i] = 0
+            for j in range(3):
+                c[i] += self.omega[i] * a1[j]
+        # c = np.dot(self.omega, a1)
+
+        for i in range(3):
+            self.v_alpha[i] = a[i+3] - c[i]
+
+        module_v_alpha = math.sqrt(self.v_alpha[0]*self.v_alpha[0] + self.v_alpha[1]*self.v_alpha[1]
+                                   + self.v_alpha[2] * self.v_alpha[2])
+
+        CxS = 1.4  # m^2
+        result = -CxS * 0.5 * self.std_density(height) * module_v_alpha
+        result = np.dot(result, self.v_alpha)
+        result = result / self.m
+        return result
+
+    def add_result(self, a, t):
+        k = t / self.sampling_increment
+        k = int(math.floor(k))
+        self.result[k][0] = t
+        for i in range(1, self.getsize(self.x0) + 1):
+            self.result[k][i] = a[i - 1]
+
+        rows = self.getsize(self.x0)
+        for i in range(1, self.getsize(self.x0) + 1):
+            self.result[rows][i] = a[i - 1]
+
+        d = np.zeros(3)
+        rs = np.zeros(3)
+
+        alphaZ = 75
+
+        # Параметры НИПа
+        phi = math.radians(18)
+        lamda = math.radians(173)
+
+        Sg = ISZ.omega * t  # + Sg0 которое равно нулю
+        NIPLongitude = Sg + lamda  # долгота НИПа
+        ISZLongitude = self.Geographical(a)[0]
+        tg = ISZLongitude - NIPLongitude
+        delta = self.Geographical(a)[1]
+
+        rs[0] = math.cos(phi) * math.cos(Sg + lamda)
+        rs[1] = math.cos(phi) * math.sin(Sg + lamda)
+        rs[2] = math.sin(phi)
+
+        for i in range(3):
+            d[i] = a[i] - rs[i] * (ISZ.re + self.h)
+        self.d = np.row_stack((self.d, d))
+
+        dRs = np.dot(d, rs)  # скалярное произведение d на rs
+        moduleD = norm(d, ord=2)  # модуль вектора d
+        moduleRs = norm(rs, ord=2)  # модуль вектора rs
+        alpha = dRs / (moduleD * moduleRs)
+        alpha = math.acos(alpha)
+        alpha = math.degrees(alpha)
+
+        if math.fabs(alpha) <= alphaZ:
+            if self.count == 0:
+                self.tNip = t
+                self.OpornResult[0] = self.result[t]
+                tempElevation = math.asin(math.sin(delta) * math.sin(phi) + math.cos(delta)
+                                          * math.cos(phi) * math.cos(tg))
+                #self.ElevationAzimut[0] = tempElevation
+                # tempAzimut = (math.cos(0) * math.sin(math.fabs(lamda + Sg - alpha))) / math.cos(self.e)
+                #tempAzimut = (math.cos(delta) * math.sin(tg)) / math.cos(self.e)
+                #tempAzimut = math.asin(tempAzimut)
+                #self.ElevationAzimut[1] = tempAzimut
+                self.time[0] = alpha
+
+            self.OpornResult = np.row_stack((self.OpornResult, self.result[t]))
+
+            tempElevation = math.asin(math.sin(delta) * math.sin(phi) + math.cos(delta)
+                                      * math.cos(phi) * math.cos(tg))
+            self.ElevationAzimut = np.row_stack((self.ElevationAzimut, tempElevation))
+            # tempAzimut = (math.cos(0) * math.sin(math.fabs(lamda + Sg - alpha))) / math.cos(self.e)
+            tempAzimut = (math.cos(delta) * math.sin(tg)) / math.cos(self.e)
+            tempAzimut = math.asin(tempAzimut)
+            self.ElevationAzimut = np.row_stack((self.ElevationAzimut, tempAzimut))
+            self.Elevation = np.row_stack((self.Elevation, tempElevation))
+            self.Azimut = np.row_stack((self.Azimut, tempAzimut))
+            self.time = np.row_stack((self.time, alpha))
+            self.count += 1
+
+    # The core of Dorman-Prins method
+    # Here we are solving the system of equations
+    def get_right(self, a, t):
+        module_x = math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2])  # length of a vector
+        result = np.empty(self.getsize(self.x0))
+        T = 0.1428571229
+        k = 1.511857892
+
+        result[0] = a[3]  # Vx = dx/dt
+        result[1] = a[4]  # Vy = dy/dt
+        result[2] = a[5]  # Vz = dz/dt
+        result[3] = -ISZ.mu * a[0] / math.pow(module_x, 3) + self.aerodynamic_force(a)[0]
+        result[4] = -ISZ.mu * a[1] / math.pow(module_x, 3) + self.aerodynamic_force(a)[1]
+        result[5] = -ISZ.mu * a[2] / math.pow(module_x, 3) + self.aerodynamic_force(a)[2]
+        #result[6] = 0  # 1 / T * (k * self.wn.getvalue(t) - a[6])
+
+        return result
