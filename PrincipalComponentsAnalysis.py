@@ -1,4 +1,3 @@
-import numpy as np
 from ISZ import *
 from Satellite import *
 from DormanPrins_lab2 import TDP
@@ -13,61 +12,58 @@ class PCA:
         :param count: количество измерений. В данном случае, сколько измерений успел снять НИП
         :param n: количество дифференциальных уравнений.
         """
+        self.dormanPrins = TDP()  # интегратор
+        self.dormanPrins.geps = 1e-8
 
         self.deltaXYZ = 100  # разброс для координат
-        self.deltaV = 10  # разброс для скоростей
+        self.deltaV = 1  # разброс для скоростей
         self.count = count
         self.n = n
 
-        self.Hm = np.zeros((count, n))
-        self.D = np.zeros((count, count))
-        self.iscElAz = np.zeros((self.count * 2 + 2, 1))  # матрица искаженных значений элевации и азимута
-        self.iscElevation = np.zeros((count, 1))
-        self.iscAzimut = np.zeros((count, 1))
-        self.result = result
+        self.result = result[0]
+
+        for i in range(3):
+            self.result[i + 1] += self.deltaXYZ
+            self.result[i + 4] += self.deltaV
+
+        resultForIsz = np.zeros(6)
+        for i in range(6):
+            resultForIsz[i] = self.result[i + 1]
+
+        self.Sputnik = Satellite()
+        self.ISZ = ISZ(0, count, 1, n, resultForIsz, self.Sputnik)  # опорная траектория
+        self.dormanPrins.run(self.ISZ)  # интегрирование опорной траектории
 
         self.resultChangePlus = np.zeros((6, self.n))
         self.resultChangeMinus = np.zeros((6, self.n))
 
         for j in range(6):
             for k in range(6):
-                self.resultChangePlus[j][k] = result[0][k + 1]
-                self.resultChangeMinus[j][k] = result[0][k + 1]
+                self.resultChangePlus[j][k] = self.ISZ.result[0][k + 1]
+                self.resultChangeMinus[j][k] = self.ISZ.result[0][k + 1]
 
         for k in range(3):
             self.resultChangePlus[k][k] += self.deltaXYZ
-            self.resultChangePlus[k+3][k+3] += self.deltaV
+            self.resultChangePlus[k + 3][k + 3] += self.deltaV
             self.resultChangeMinus[k][k] -= self.deltaXYZ
-            self.resultChangeMinus[k+3][k+3] -= self.deltaV
+            self.resultChangeMinus[k + 3][k + 3] -= self.deltaV
 
-        """""    
-        self.resultPlus = np.zeros((count, n))  # массив результата с разбросом +
-        self.resultMinus = np.zeros((count, n))  # массив результата с разбросом -
-        
-        for i in range(count):
-            for j in range(3):
-                self.resultPlus[i][j] = result[i][j + 1] + self.deltaXYZ
-                self.resultMinus[i][j] = result[i][j + 1] - self.deltaXYZ
-                self.resultPlus[i][j+3] = result[i][j+4] + self.deltaV
-                self.resultMinus[i][j+3] = result[i][j+4] - self.deltaV
-        """""
-
-        self.Sputnik = Satellite()
-        self.ISZ = isz
         self.modelPlus = ISZ(0, count, 1, n, self.resultChangePlus[0], self.Sputnik)
         self.modelMinus = ISZ(0, count, 1, n, self.resultChangeMinus[0], self.Sputnik)
-        self.dormanPrins = TDP()
-        self.dormanPrins.geps = 1e-8
-        self.countD()  # считаем матрицу D
+
+        self.Hm = np.zeros((count, n))
+        self.D = np.zeros((count, count))
+        self.iscElAz = np.zeros((self.count * 2, 1))  # матрица искаженных значений элевации и азимута
+
+        # self.countD()  # считаем матрицу D
 
     def countD(self):
         disp = 3.3
         deltaD = random.normalvariate(0, disp)
-        # iscElAz = np.zeros((self.count * 2, 1))  # матрица искаженных значений элевации и азимута
-        row = self.ISZ.Azimut.shape[0]
-        for i in range(row):
-            self.iscAzimut[i] = self.ISZ.Azimut[i] + deltaD
-            self.iscElevation[i] = self.ISZ.Elevation[i] + deltaD
+        # row = self.ISZ.Azimut.shape[0]
+        # for i in range(row):
+        # self.iscAzimut[i] = self.ISZ.Azimut[i] + deltaD
+        # self.iscElevation[i] = self.ISZ.Elevation[i] + deltaD
         row = self.iscElAz.shape[0]
         for i in range(row):
             self.iscElAz[i] = self.ISZ.ElevationAzimut[i] + deltaD
@@ -77,7 +73,6 @@ class PCA:
                     self.D[i][j] = 0
                 else:
                     self.D[i][j] = disp
-        g = 3
 
     def countH(self):
         column = 0
