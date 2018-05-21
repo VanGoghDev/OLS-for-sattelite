@@ -2,8 +2,6 @@ import model as model
 import numpy as np
 import math
 import random
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 import Satellite
 from numpy.linalg import norm
 
@@ -58,22 +56,16 @@ class ISZ(model.Model):
         self.x0 = np.zeros(n)
         for i in range(6):
             self.x0[i] = x0[i]
-        #self.x0[6] = 0
+        # self.x0[6] = 0
         self.count = 0  # счетчик того, сколько раз НИП засечет спутник
-        self.tNip = 0  # время когда спутник попадает в зону видимости НИПа
-        self.OpornResult = np.zeros((1, self.n+1))  # матрица результатов для опорной траектории
-        self.ElevationAzimut = np.zeros((2, 1))  # матрица, которая содержит в себе элевацию и азимут
+        self.OpornResult = np.zeros((0, self.n+1))  # матрица результатов для опорной траектории
+        self.ElevationAzimut = np.zeros((0, 1))  # матрица, которая содержит в себе элевацию и азимут
         self.Elevation = np.zeros((0, 1))
         self.Azimut = np.zeros((0, 1))
         self.e = startingConditions.e
-        self.time = np.zeros(1)  # массив в котором хранятся углы, которые измеряются пока ИСЗ в зоне видимости НИПа
+        self.angles = np.zeros((0, 1))  # массив углов, которые измеряются пока ИСЗ в зоне видимости НИПа
         self.d = np.zeros((0, 3))
         self.h = 0
-
-        # self.resultPlus = np.zeros((1, self.n+1))  # массив результата с разбросом +
-        # self.resultMinus = np.zeros((1, self.n+1))  # массив результата с разбросом -
-        # self.deltaXYZ = 100  # разброс для координат
-        # self.deltaV = 10  # разброс для скоростей
 
     @staticmethod
     def getsize(a):
@@ -167,8 +159,6 @@ class ISZ(model.Model):
         Sg = ISZ.omega * t  # + Sg0 которое равно нулю
         NIPLongitude = Sg + lamda  # долгота НИПа
         ISZLongitude = self.Geographical(a)[0]
-        tg = ISZLongitude - NIPLongitude
-        delta = self.Geographical(a)[1]
 
         rs[0] = math.cos(phi) * math.cos(Sg + lamda)
         rs[1] = math.cos(phi) * math.sin(Sg + lamda)
@@ -186,30 +176,22 @@ class ISZ(model.Model):
         alpha = math.degrees(alpha)
 
         if math.fabs(alpha) <= alphaZ:
-            if self.count == 0:
-                self.tNip = t
-                self.OpornResult[0] = self.result[t]
-                tempElevation = math.asin(math.sin(delta) * math.sin(phi) + math.cos(delta)
-                                          * math.cos(phi) * math.cos(tg))
-                #self.ElevationAzimut[0] = tempElevation
-                # tempAzimut = (math.cos(0) * math.sin(math.fabs(lamda + Sg - alpha))) / math.cos(self.e)
-                #tempAzimut = (math.cos(delta) * math.sin(tg)) / math.cos(self.e)
-                #tempAzimut = math.asin(tempAzimut)
-                #self.ElevationAzimut[1] = tempAzimut
-                self.time[0] = alpha
+            tg = ISZLongitude - NIPLongitude
+            delta = self.Geographical(a)[1]
 
             self.OpornResult = np.row_stack((self.OpornResult, self.result[t]))
 
             tempElevation = math.asin(math.sin(delta) * math.sin(phi) + math.cos(delta)
                                       * math.cos(phi) * math.cos(tg))
+            tempAzimut = math.asin((math.cos(delta) * math.sin(tg)) / math.cos(self.e))
             self.ElevationAzimut = np.row_stack((self.ElevationAzimut, tempElevation))
-            # tempAzimut = (math.cos(0) * math.sin(math.fabs(lamda + Sg - alpha))) / math.cos(self.e)
-            tempAzimut = (math.cos(delta) * math.sin(tg)) / math.cos(self.e)
-            tempAzimut = math.asin(tempAzimut)
             self.ElevationAzimut = np.row_stack((self.ElevationAzimut, tempAzimut))
+
             self.Elevation = np.row_stack((self.Elevation, tempElevation))
             self.Azimut = np.row_stack((self.Azimut, tempAzimut))
-            self.time = np.row_stack((self.time, alpha))
+
+            self.angles = np.row_stack((self.angles, alpha))
+
             self.count += 1
 
     # The core of Dorman-Prins method
@@ -217,8 +199,8 @@ class ISZ(model.Model):
     def get_right(self, a, t):
         module_x = math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2])  # length of a vector
         result = np.empty(self.getsize(self.x0))
-        T = 0.1428571229
-        k = 1.511857892
+        # T = 0.1428571229
+        # k = 1.511857892
 
         result[0] = a[3]  # Vx = dx/dt
         result[1] = a[4]  # Vy = dy/dt
@@ -226,6 +208,6 @@ class ISZ(model.Model):
         result[3] = -ISZ.mu * a[0] / math.pow(module_x, 3) + self.aerodynamic_force(a)[0]
         result[4] = -ISZ.mu * a[1] / math.pow(module_x, 3) + self.aerodynamic_force(a)[1]
         result[5] = -ISZ.mu * a[2] / math.pow(module_x, 3) + self.aerodynamic_force(a)[2]
-        #result[6] = 0  # 1 / T * (k * self.wn.getvalue(t) - a[6])
+        # result[6] = 0  # 1 / T * (k * self.wn.getvalue(t) - a[6])
 
         return result
