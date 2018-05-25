@@ -5,6 +5,11 @@ import random
 import Satellite
 from numpy.linalg import norm
 
+def scalarProduct(a, b):
+    c = 0
+    for i in range(len(a)):
+        c += a[i] * b[i]
+    return c
 
 # noinspection PyCompatibility
 class WhiteNoise:
@@ -62,10 +67,13 @@ class ISZ(model.Model):
         self.ElevationAzimut = np.zeros((0, 1))  # матрица, которая содержит в себе элевацию и азимут
         self.Elevation = np.zeros((0, 1))
         self.Azimut = np.zeros((0, 1))
+        self.iscElAz = np.zeros((0, 1))
         self.e = startingConditions.e
         self.angles = np.zeros((0, 1))  # массив углов, которые измеряются пока ИСЗ в зоне видимости НИПа
         self.d = np.zeros((0, 3))
         self.h = 0
+        self.rn = np.zeros((0, 3))
+        self.dt = np.zeros((0, 3))
 
     @staticmethod
     def getsize(a):
@@ -163,10 +171,10 @@ class ISZ(model.Model):
         rs[0] = math.cos(phi) * math.cos(Sg + lamda)
         rs[1] = math.cos(phi) * math.sin(Sg + lamda)
         rs[2] = math.sin(phi)
+        self.rn = np.row_stack((self.rn, rs))
 
         for i in range(3):
             d[i] = a[i] - rs[i] * (ISZ.re + self.h)
-        self.d = np.row_stack((self.d, d))
 
         dRs = np.dot(d, rs)  # скалярное произведение d на rs
         moduleD = norm(d, ord=2)  # модуль вектора d
@@ -176,16 +184,45 @@ class ISZ(model.Model):
         alpha = math.degrees(alpha)
 
         if math.fabs(alpha) <= alphaZ:
+            self.d = np.row_stack((self.d, d))
+
+            mod_d = math.sqrt(pow(d[0], 2) + pow(d[1], 2) + pow(d[2], 2))
+            mod_rs = math.sqrt(pow(rs[0], 2) + pow(rs[1], 2) + pow(rs[2], 2))
+            tempElevation = 90 - math.acos((rs[0] * d[0] + rs[1] * d[1] + rs[2] * d[2]) / (mod_rs * mod_d))
+
+            arr = np.array([[-math.sin(phi)*math.cos(Sg), -math.sin(phi)*math.sin(Sg), math.cos(phi)],
+                            [math.cos(phi)*math.cos(Sg), math.cos(phi)*math.sin(Sg), math.sin(phi)],
+                            [-math.sin(phi), math.cos(phi), 0]])
+            dt = np.dot(arr, d)
+            self.dt = np.row_stack((self.dt, dt))
+            # north = np.array([1, 0, 0])
+            # tempAzimut = np.dot(dt, north) / 1000
+
+            mod_dt = math.sqrt(pow(dt[0], 2) + pow(dt[1], 2) + pow(dt[2], 2))
+            if d[2] < 0:
+                tempAzimut = -math.acos(dt[0]/mod_dt)
+            else:
+                tempAzimut = math.acos(dt[0]/mod_dt)
+            tempAzimut = math.degrees(tempAzimut)
+
             tg = ISZLongitude - NIPLongitude
             delta = self.Geographical(a)[1]
 
             self.OpornResult = np.row_stack((self.OpornResult, self.result[t]))
 
-            tempElevation = math.asin(math.sin(delta) * math.sin(phi) + math.cos(delta)
-                                      * math.cos(phi) * math.cos(tg))
-            tempAzimut = math.asin((math.cos(delta) * math.sin(tg)) / math.cos(self.e))
+            # tempElevation = math.asin(math.sin(delta) * math.sin(phi) + math.cos(delta)
+                                      # * math.cos(phi) * math.cos(tg))
+            # tempAzimut = math.asin((math.cos(delta) * math.sin(tg)) / math.cos(self.e))
             self.ElevationAzimut = np.row_stack((self.ElevationAzimut, tempElevation))
             self.ElevationAzimut = np.row_stack((self.ElevationAzimut, tempAzimut))
+
+            disp = 3.3  # по-моему слишком сильное отклонение происходит
+            deltaD = random.normalvariate(0, disp)
+            iscEl = tempElevation + deltaD
+            self.iscElAz = np.row_stack((self.iscElAz, iscEl))
+
+            iscAz = tempAzimut + deltaD
+            self.iscElAz = np.row_stack((self.iscElAz, iscAz))
 
             self.Elevation = np.row_stack((self.Elevation, tempElevation))
             self.Azimut = np.row_stack((self.Azimut, tempAzimut))
