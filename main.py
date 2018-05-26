@@ -40,10 +40,9 @@ def main():
     obj = ISZ(0, 17000, 1, 6, Sputnik.x0, Sputnik)
     dorm__prins.run(obj)
     res = obj.OpornResult
-    count = obj.count
-    pca = PrincipalComponentsAnalysis.PCA(res, count, 6, obj)
+    pca = PrincipalComponentsAnalysis.PCA(res, obj)
     pca.countH()
-    build_plot2(obj)
+    build_plot(obj)
 
 
 main()
