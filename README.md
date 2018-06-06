@@ -3,9 +3,11 @@ My course project at institute. I should to create a PCA algorhitm in order to e
 
 based on apriory analysis
 
-__Model__
+# Model
 
-A sattelite which moves around the Earth orbit at _normal Gravity Field_ 
+A sattelite which moves around the Earth orbit under _normal Gravity Field_ 
+
+__Initial data__
 
 Initial data are specified in the osculating elements
 
